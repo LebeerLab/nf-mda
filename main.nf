@@ -9,11 +9,21 @@ params.outdir = "results"
 // ## MDA METHODS TO RUN
 params.skip_lmclr = false
 params.skip_maaslin3 = false
-
+params.skip_maaslin2 = true
+params.skip_deseq = false
+params.skip_aldex3 = false
+params.skip_aldex2 = true
+params.skip_limma = false
 
 // IMPORT METHODS
 include { LMCLR } from './modules/lmclr'
 include { MAASLIN3 } from './modules/maaslin3'
+include { MAASLIN2 } from './modules/maaslin2'
+include { DESEQ2 } from './modules/deseq2'
+include { ALDEX3 } from './modules/aldex3'
+include { ALDEX2 } from './modules/aldex2'
+include { LIMMA } from './modules/limma'
+
 
 process VALIDATE_INPUT {
 
@@ -101,6 +111,67 @@ workflow {
     )
     ch_results_full = ch_results_full.mix(
         MAASLIN3.out.res_full.first()
+    )
+
+  }
+
+  if (!params.skip_maaslin2) {
+
+    MAASLIN2(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        MAASLIN2.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        MAASLIN2.out.res_full.first()
+    )
+
+  }
+
+
+  if (!params.skip_limma) {
+
+    LIMMA(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        LIMMA.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        LIMMA.out.res_full.first()
+    )
+
+  }
+
+  if (!params.skip_deseq2) {
+
+    DESEQ2(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        DESEQ2.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        DESEQ2.out.res_full.first()
+    )
+
+  }
+
+  if (!params.skip_aldex3) {
+
+    ALDEX3(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        ALDEX3.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        ALDEX3.out.res_full.first()
+    )
+
+  }
+
+  if (!params.skip_aldex2) {
+
+    ALDEX2(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        ALDEX2.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        ALDEX2.out.res_full.first()
     )
 
   }
