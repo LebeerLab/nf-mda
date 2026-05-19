@@ -14,6 +14,9 @@ params.skip_deseq = false
 params.skip_aldex3 = false
 params.skip_aldex2 = true
 params.skip_limma = false
+params.skip_corncob = true
+params.skip_ancombc = false
+params.skip_zicoseq = false
 
 // IMPORT METHODS
 include { LMCLR } from './modules/lmclr'
@@ -23,7 +26,9 @@ include { DESEQ2 } from './modules/deseq2'
 include { ALDEX3 } from './modules/aldex3'
 include { ALDEX2 } from './modules/aldex2'
 include { LIMMA } from './modules/limma'
-
+include { CORNCOB } from './modules/corncob'
+include { ZICOSEQ } from './modules/zicoseq'
+include { ANCOMBC2 } from './modules/ancombc2'
 
 process VALIDATE_INPUT {
 
@@ -140,6 +145,18 @@ workflow {
 
   }
 
+  if (!params.skip_corncob) {
+
+    CORNCOB(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        CORNCOB.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        CORNCOB.out.res_full.first()
+    )
+
+  }
+
   if (!params.skip_deseq2) {
 
     DESEQ2(counts, metadata_clean, formulas)
@@ -172,6 +189,31 @@ workflow {
     )
     ch_results_full = ch_results_full.mix(
         ALDEX2.out.res_full.first()
+    )
+
+  }
+
+  if (!params.skip_ancombc2) {
+
+    ANCOMBC2(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        ANCOMBC2.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        ANCOMBC2.out.res_full.first()
+    )
+
+  }
+
+
+  if (!params.skip_zicoseq) {
+
+    ZICOSEQ(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        ZICOSEQ.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        ZICOSEQ.out.res_full.first()
     )
 
   }
