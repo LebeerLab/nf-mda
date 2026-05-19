@@ -8,12 +8,12 @@ params.metadata = "data/mda.example.meta_data.tsv"
 params.outdir = "results"
 // ## MDA METHODS TO RUN
 params.skip_lmclr = false
-
+params.skip_maaslin3 = false
 
 
 // IMPORT METHODS
 include { LMCLR } from './modules/lmclr'
-
+include { MAASLIN3 } from './modules/maaslin3'
 
 process VALIDATE_INPUT {
 
@@ -92,6 +92,19 @@ workflow {
     )
 
   }
+
+  if (!params.skip_maaslin3) {
+
+    MAASLIN3(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        MAASLIN3.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        MAASLIN3.out.res_full.first()
+    )
+
+  }
+
 
   ch_results
     .collectFile(name: 'results.tsv', storeDir: params.outdir, keepHeader: true)
