@@ -1,6 +1,6 @@
 process LIMMA {
 
-  container "thiesgehrmann/limma"
+  container "thiesgehrmann/multidiffabundance_limma:1"
 
   input:
   path(counts)

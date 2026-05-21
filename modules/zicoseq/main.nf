@@ -1,6 +1,6 @@
 process ZICOSEQ {
 
-  container "thiesgehrmann/zicoseq"
+  container "thiesgehrmann/multidiffabundance_zicoseq:1"
 
   input:
   path(counts)

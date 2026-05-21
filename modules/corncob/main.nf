@@ -1,6 +1,6 @@
 process CORNCOB {
 
-  container "thiesgehrmann/corncob"
+  container "thiesgehrmann/multidiffabundance_corncob:1"
 
   input:
   path(counts)

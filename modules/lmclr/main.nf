@@ -1,6 +1,6 @@
 process LMCLR {
 
-  container "thiesgehrmann/multidiffabundance"
+  container "thiesgehrmann/multidiffabundance_mda:1"
 
   input:
   path(counts)

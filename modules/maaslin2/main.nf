@@ -1,6 +1,6 @@
 process MAASLIN2 {
 
-  container "thiesgehrmann/maaslin2"
+  container "thiesgehrmann/multidiffabundance_maaslin2:1"
 
   input:
   path(counts)

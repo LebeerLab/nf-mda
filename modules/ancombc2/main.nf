@@ -1,6 +1,6 @@
 process ANCOMBC2 {
 
-  container "thiesgehrmann/ancombc2"
+  container "thiesgehrmann/multidiffabundance_ancombc2:1"
 
   input:
   path(counts)

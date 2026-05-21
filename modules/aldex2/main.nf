@@ -1,6 +1,6 @@
 process ALDEX2 {
 
-  container "thiesgehrmann/aldex2"
+  container "thiesgehrmann/multidiffabundance_aldex2:1"
 
   input:
   path(counts)

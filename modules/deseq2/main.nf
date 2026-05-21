@@ -1,6 +1,6 @@
 process DESEQ2 {
 
-  container "thiesgehrmann/deseq2"
+  container "thiesgehrmann/multidiffabundance_deseq2:1"
 
   input:
   path(counts)
