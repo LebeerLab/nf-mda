@@ -47,6 +47,7 @@ process VALIDATE_INPUT {
     suppressPackageStartupMessages(library(tidyverse))
 
     metadata <- read_table("$metadata")
+    snames <- colnames(metadata)[1]
     fmls <- read_lines("$formulas")
     
     mdata_fields <- lapply(fmls, as.formula) %>% 
@@ -66,7 +67,7 @@ process VALIDATE_INPUT {
 
     counts <- read.delim("$counts")
     
-    missing_samples <- setdiff(counts[['SampleID']], metadata[['SampleID']])
+    missing_samples <- setdiff(counts[[snames]], metadata[[snames]])
     if (length(missing_samples) > 0) { 
         stop(paste("Missing samples in metadata:", missing_samples))
     } 
@@ -77,17 +78,18 @@ process VALIDATE_INPUT {
     mutate(across(all_of(unlist(mdata_fields)), 
         function(x) str_replace_all(x, "[[:punct:]]", ""))) 
 
-    if (!identical(metadata_cleaned[['SampleID']],counts[['SampleID']])) {
+    if (!identical(metadata_cleaned[[snames]],counts[[snames]])) {
       # sort according to counts
-      metadata_cleaned[['SampleID']] <- factor(metadata_cleaned[['SampleID']], levels=counts[['SampleID']])
-      metadata_cleaned <- metadata_cleaned %>% arrange(SampleID)
+      metadata_cleaned[[snames]] <- factor(metadata_cleaned[[snames]], levels=counts[[snames]])
+      metadata_cleaned <- metadata_cleaned %>% arrange(snames)
     }
 
     metadata_cleaned %>%
     write_tsv("metadata_cleaned.tsv")
 
-    if (!identical(metadata_cleaned[['SampleID']], factor(counts[['SampleID']]))) {
-      stop(paste("Something is wrong with the order of samples in the metadata or count table", all.equal(metadata_cleaned[['SampleID']], counts[['SampleID']])))
+    if (!identical(as.character(metadata_cleaned[[snames]]), counts[[snames]])) {
+      stop(paste("Something is wrong with the order of samples in the metadata or count table", 
+      all.equal(metadata_cleaned[[snames]], counts[[snames]])))
     }
 
 
