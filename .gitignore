@@ -1,0 +1,9 @@
+# nf related
+.nextflow*
+work
+
+# output
+results
+
+# input
+data 

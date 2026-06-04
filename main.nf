@@ -10,12 +10,12 @@ params.outdir = "results"
 params.skip_lmclr = false
 params.skip_maaslin3 = false
 params.skip_maaslin2 = true
-params.skip_deseq = false
 params.skip_aldex3 = false
 params.skip_aldex2 = true
 params.skip_limma = false
 params.skip_corncob = true
-params.skip_ancombc = false
+params.skip_deseq2 = false
+params.skip_ancomb2 = false
 params.skip_zicoseq = false
 
 // IMPORT METHODS
@@ -71,12 +71,24 @@ process VALIDATE_INPUT {
         stop(paste("Missing samples in metadata:", missing_samples))
     } 
 
-    metadata %>%
+    metadata_cleaned <- metadata %>%
     mutate(across(all_of(unlist(mdata_fields)), 
         function(x) str_replace_all(x, " ", ""))) %>%
     mutate(across(all_of(unlist(mdata_fields)), 
-        function(x) str_replace_all(x, "[[:punct:]]", ""))) %>%
+        function(x) str_replace_all(x, "[[:punct:]]", ""))) 
+
+    if (!identical(metadata_cleaned[['SampleID']],counts[['SampleID']])) {
+      # sort according to counts
+      metadata_cleaned[['SampleID']] <- factor(metadata_cleaned[['SampleID']], levels=counts[['SampleID']])
+      metadata_cleaned <- metadata_cleaned %>% arrange(SampleID)
+    }
+
+    metadata_cleaned %>%
     write_tsv("metadata_cleaned.tsv")
+
+    if (!identical(metadata_cleaned[['SampleID']], factor(counts[['SampleID']]))) {
+      stop(paste("Something is wrong with the order of samples in the metadata or count table", all.equal(metadata_cleaned[['SampleID']], counts[['SampleID']])))
+    }
 
 
     """

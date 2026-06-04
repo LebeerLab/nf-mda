@@ -1,0 +1,413 @@
+#!/usr/bin/env bash
+
+###############################################################################
+
+function usage(){
+    echo "MDA: Multi Differential Abundance tool"
+    echo "Usage: $0 [options] <count_data> <meta_data> <function> <outputprefix>"
+    echo "  Options:"
+    echo "    -a|--aldex2         : Run ALDEx2"
+    echo "       --aldex3         : Run ALDEx3"
+    echo "    -A|--ancombc2       : Run ANCOMBC"
+    echo "    -c|--corncob        : Run corncob"
+    echo "    -d|--deseq2         : Run DESeq2"
+    echo "    -l|--limma          : Run limma"
+    echo "    -L|--lmclr          : Run lm CLR"
+    echo "    -m|--maaslin2       : Run Maaslin2"
+    echo "    -M|--maaslin3       : Run Maaslin3"
+    echo "    -z|--zicoseq        : Run ZicoSeq"
+    echo "    -w|--wilcoxon       : Run Wilcoxon rank sum test"
+    echo "    --alpha             : Run alpha diversity test"
+    echo "    --beta              : Run beta diversity test (permanova/adonis2)"
+    echo "    --group             : Run an analysis on meta data a group variable (i.e. logistic regression) (e.g. CST/enterotypes etc.)"
+    echo "                          Define the relevant column with: --options \"group.col='groupcol'\" "
+    echo "    --continuous        : Run an analysis on meta data for a continuous variable (e.g. a score etc.)"
+    echo "                          Define the relevant column with: --options \"continuous.cols=c('score1','score2')\" "
+    echo "    --custom <str>      : Run a custom analysis. <str> refers to the file path."
+    echo "                          Provide the function name with: --options \"custom.name=myfunc\". (Default is custom.method)"
+    echo ""
+    echo "    -o|--options <str>  : Arguments to the mda functions. Comma seperated."
+    echo "                          (e.g. -o 'beta.permutations=10000')"
+    echo ""
+    echo "    --nocache           : Do not use a cache"
+    echo "    --recache           : Re-do cached analyses"
+    echo ""
+    echo "    --docker            : Run the pipeline in its docker environment (Requires docker to be installed)"
+    echo "    --singularity       : Run the pipeline in its singularity environment (Requires singularity to be installed)"
+    echo ""
+
+    echo "    --nocheck           : Do not check the file and formula inputs (on by default when running in containers or incomplete environments)"
+    echo "    --nomerge           : Do not merge all the outputs of each individual method together."
+    echo ""    
+    echo "    --help              : Display this help message"
+
+    echo "  Inputs:"
+    echo "    count_data : File path to a sample*taxa (rows*columns) tab separated file.
+                           First column is sample IDs"
+    echo "    meta_data  : File path to a sample*determinant (rows*columns) tab separated file.
+                           First column is sample IDs"
+    echo "    function   : Either a string in R formula format (e.g. ~ a + b + c), or
+                           a file path to a line-separated list of these formulas"
+    echo "    outputprefix : A path to a location of the outputs"
+
+}
+
+###############################################################################
+# PROCESS INPUTS
+
+ARGS=$(getopt -o 'aAcdlLmMwzo:' --long 'alpha,beta,group,continuous,aldex2,aldex3,ancombc2,corncob,deseq2,limma,lmclr,maaslin2,maaslin3,zicoseq,wilcoxon,custom:,options:,recache,nocache,docker,singularity,nocheck,nomerge,help' -- "$@") || exit
+eval "set -- $ARGS"
+
+custom_file=""
+usecache="TRUE"
+recache="FALSE"
+docker=0
+singularity=0
+nocheck=0
+nomerge=0
+fn_arguments=""
+mdapackage="multidiffabundance"
+
+declare -a methods
+
+while true; do
+    case $1 in
+      (-a|--aldex2)
+            methods+=("aldex2"); shift;;
+         (--aldex3)
+            methods+=("aldex3"); shift;;
+      (-A|--ancombc2)
+            methods+=("ancombc2"); shift;;
+      (-c|--corncob)
+            methods+=("corncob"); shift;;
+      (-d|--deseq2)
+            methods+=("deseq2"); shift;;
+      (-l|--limma)
+            methods+=("limma"); shift;;
+      (-L|--lmclr)
+            methods+=("lmclr"); shift;;
+      (-m|--maaslin2)
+            methods+=("maaslin2"); shift;;
+      (-M|--maaslin3)
+            methods+=("maaslin3"); shift;;
+      (-w|--wilcoxon)
+            methods+=("wilcoxon"); shift;;
+      (-z|--zicoseq)
+            methods+=("zicoseq"); shift;;
+      (--alpha)
+            methods+=("alpha"); shift;;
+      (--beta)
+            methods+=("beta"); shift;;
+      (--group)
+            methods+=("group"); shift;;
+      (--continuous)
+            methods+=("continuous"); shift;;
+      (--custom)
+            methods+=("custom"); fn_arguments="$fn_arguments, custom.file='$2'"; shift 2;;
+      (-o|--options)
+            fn_arguments="$fn_arguments, $2"; shift 2;;
+      (--nocache)
+            usecache="FALSE"; shift;;
+      (--recache)
+            recache="TRUE"; shift;;
+      (--docker)
+            docker=1; singularity=0; nocheck=1; shift;;
+      (--singularity)
+            docker=0; singularity=1; nocheck=1; shift;;
+      (--nocheck)
+            nocheck=1; shift;;
+      (--nomerge)
+            nomerge=1; shift;;
+      (--help)
+            usage $0; exit 1;;
+      (--)
+          shift; break;;
+      (*)
+          usage $0; exit 1;;           # error
+    esac
+done
+
+#############################
+# Deal with file inputs
+
+remaining=("$@")
+
+if [ ! "${#remaining[@]}" -eq 4 ]; then
+    usage $0
+    exit 1
+fi
+
+count_data=`realpath ${remaining[0]/#\~/$HOME}`
+meta_data=`realpath ${remaining[1]/#\~/$HOME}`
+formula=${remaining[2]}
+outprefix=`realpath ${remaining[3]/#\~/$HOME}`
+
+function check_if_exists_else_fail(){
+    if [ ! -f "$1" ]; then
+        echo "Error: File '$1' does not exist."
+        exit $2;
+    fi
+}
+
+if [ $nocheck -eq 0 ]; then
+    check_if_exists_else_fail "$count_data" 2
+    check_if_exists_else_fail "$meta_data" 2
+fi
+
+##################################
+# Check formula input data
+
+function check_if_is_formula(){
+    echo "as.formula('$1')" | R --no-save &> /dev/null
+    echo $?
+}
+
+if [ $nocheck -eq 0 ]; then
+
+    if [ `check_if_is_formula "$formula"` -eq 1 ]; then
+        formula=`realpath "${formula/#\~/$HOME}"`
+        check_if_exists_else_fail "$formula" 2
+    fi
+
+    echo "library(multidiffabundance)
+        raw.formula.data <- mda.load_formula_input('$formula')
+        if(mda.verify_formula_input(raw.formula.data)){
+            quit(save='no', status=0)}
+        else {quit(save='no', status=1)}" | R --no-save &> /dev/null
+    if [ ! "$?" -eq 0 ]; then
+        echo "ERROR: Please check your function input! (Do you have MDA installed?)"
+        exit 1
+    fi
+
+fi
+
+####################################
+# Make output data
+
+mkdir -p "$outprefix"
+
+###############################################################################
+
+declare -A docker_tags
+docker_tags["mda"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["alpha"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["beta"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["group"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["continuous"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["custom"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["corncob"]="thiesgehrmann/multidiffabundance_corncob:1"
+
+docker_tags["aldex2"]="thiesgehrmann/multidiffabundance_aldex2:1"
+docker_tags["aldex3"]="thiesgehrmann/multidiffabundance_aldex3:1"
+docker_tags["ancombc2"]="thiesgehrmann/multidiffabundance_ancombc2:1"
+docker_tags["deseq2"]="thiesgehrmann/multidiffabundance_deseq2:1"
+docker_tags["limma"]="thiesgehrmann/multidiffabundance_limma:1"
+docker_tags["lmclr"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["maaslin2"]="thiesgehrmann/multidiffabundance_maaslin2:1"
+docker_tags["maaslin3"]="thiesgehrmann/multidiffabundance_maaslin3:1"
+docker_tags["wilcoxon"]="thiesgehrmann/multidiffabundance_mda:1"
+docker_tags["zicoseq"]="thiesgehrmann/multidiffabundance_zicoseq:1"
+
+
+
+
+function run_one_mda(){
+    method=$1
+    
+    echo "[MDA] (`date`) RUNNING $method"
+    mkdir -p "$outprefix/$method"
+    stdlog="$outprefix/$method/stdout"
+    errlog="$outprefix/$method/stderr"
+    retlog="$outprefix/$method/retval"
+    rfile="$outprefix/$method/mda_script.R"
+    # Output the R code to run this single method
+    rm -f "$rfile"
+    cat <<EOF >> "$rfile"
+        library($mdapackage);
+        library(readr);
+        args = commandArgs(trailingOnly=TRUE);
+        D <- mda.from_cmdargs(args, usecache=$usecache, recache=$recache ${fn_arguments});
+        R <- mda.$method(D ${fn_arguments});
+        write_tsv(R\$res, paste0(c(D\$outprefix, '$method/results.tsv'), collapse=''));
+        write_tsv(R\$res.full, paste0(c(D\$outprefix, '$method/results.full.tsv'), collapse=''));
+        saveRDS(R, paste0(c(D\$outprefix, '$method/results.rds'), collapse=''))
+        warnings()
+EOF
+    
+    if [ $((docker + singularity)) -gt 0 ]; then
+    
+        docker_tag="${docker_tags["$method"]}"
+    
+        # Define the source and target variables
+        bindm_source="$outprefix"
+        bindm_target="/mda"
+        mkdir -p "$bindm_source/$method/inputs_container"
+        
+
+        runfile_container="$outprefix/$method/mda_run_container.sh"
+        
+        rfile_container_bindm="$bindm_target/$method/mda_script.R"
+        runfile_container_bindm="$bindm_target/$method/mda_run_container.sh"
+        stdlog_bindm="$bindm_target/$method/stdout"
+        errlog_bindm="$bindm_target/$method/stderr"
+        retlog_bindm="$bindm_target/$method/retval"
+                
+        bindm_count_data="$bindm_target/$method/inputs_container/count_data.csv"
+        bindm_meta_data="$bindm_target/$method/inputs_container/meta_data.csv"
+        bindm_formula="$bindm_target/$method/inputs_container/formula.txt"
+        bindm_outprefix="$bindm_target"
+        
+        
+        meta_data_container="$bindm_source/$method/inputs_container/meta_data.csv"
+        count_data_container="$bindm_source/$method/inputs_container/count_data.csv"
+        formula_container="$bindm_source/$method/inputs_container/formula.txt"
+        
+        rm -f $meta_data_container $count_data_container $formula_container
+        
+        cp "$meta_data" "$meta_data_container"
+        cp "$count_data" "$count_data_container"
+        cp "$formula" "$formula_container"
+        
+
+        rm -f "$runfile_container"
+        cat <<EOF >> "$runfile_container"
+#!/usr/bin/env bash
+            rm -f "$stdlog_container_bindm" "$errlog_container_bindm" "$retlog_container_bindm"
+            ((Rscript "$rfile_container_bindm" "$bindm_count_data" "$bindm_meta_data" "$bindm_formula" "$bindm_outprefix/" | sed -e "s%$bindm_target%$bindm_source/%g" ; echo "\$?" > "$retlog_bindm") \\
+            | tee "$stdlog_bindm") 3>&1 1>&2 2>&3 \\
+            | tee "$errlog_bindm"
+EOF
+
+        chmod +x "$runfile_container"
+        
+        if [ $singularity -eq 1 ]; then
+    
+             singularity exec \
+                --bind "$bindm_source/":"$bindm_target" \
+                --containall \
+                docker://"${docker_tag}" \
+                "$runfile_container_bindm"
+
+        else
+            
+            docker run \
+                --mount type=bind,source="$bindm_source/",target="$bindm_target" \
+                -u $(id -u):$(id -g) \
+                "$docker_tag" \
+                "$runfile_container_bindm"
+
+        fi
+    
+    else
+    
+        ######## Local execution
+    
+        runfile_local="$outputprefix/$method/mda_run_local.sh"
+
+    
+        rm -f "$stdlog_local" "$errlog_local" "$retlog_local"
+        ((Rscript "$rfile" "$count_data" "$meta_data" "$formula" "$outprefix/" ; echo >"$retlog" "$?") | tee "$stdlog") 3>&1 1>&2 2>&3 | tee "$errlog"
+    fi
+    
+    result=`cat "$retlog"`
+    if [ "$result" -eq 0 ]; then
+        echo "[MDA] (`date`) COMPLETED $method. '$outprefix/$method/results.rds'"
+    else
+        echo "[MDA] (`date`) FAILED $method. See '$errlog'"
+    fi
+    return $result
+    
+}
+
+declare -a result_methods
+
+for m in "${methods[@]}"; do
+    run_one_mda "$m" && result_methods+=("$m")
+done
+
+###############################################################################
+# Combine all the outputs into one single output
+
+if [ $nomerge -eq 0 ]; then
+
+    if [ "${#result_methods[@]}" -gt 0 ]; then
+    
+        out_file="$outprefix/results"
+    
+        if [ $((docker + singularity)) -gt 0 ]; then
+            bindm_source="$outprefix"
+            bindm_target="/mda"
+            source_rscript="$outprefix/merge_results.R"
+            bindm_rscript="$bindm_target/merge_results.R"
+            
+            echo ${result_methods[@]}
+            bindm_out_file="$bindm_target/results"
+            results=`for value in ${result_methods[@]}; do echo "${bindm_target}/${value}/results.rds"; done | awk '{print "\"" $0 "\","}' | tr '\n' ' '`
+            results=${results::-2}
+
+            rm -rf "$source_rscript"
+            cat << EOF >> "$source_rscript"
+                library('dplyr')
+                library($mdapackage)
+                library(readr)
+
+                rf <- c($results)
+                rs <- lapply(rf, readRDS)
+                comb <- mda.merge_results(rs)
+
+                saveRDS(comb,        file='${bindm_out_file}.rds')
+                write_tsv(comb\$res,      '${bindm_out_file}.tsv')
+                write_tsv(comb\$res.full, '${bindm_out_file}.full.tsv')
+EOF
+
+            if [ $singularity -eq 1 ]; then
+
+                 singularity exec \
+                    --bind "$bindm_source/":"$bindm_target" \
+                    --containall \
+                    docker://"${docker_tag}" \
+                    Rscript "$bindm_rscript"
+
+            else
+            
+                echo "Running docker to merge..."
+
+                docker run \
+                    --mount type=bind,source="$bindm_source/",target="$bindm_target" \
+                    -u $(id -u):$(id -g) \
+                    "$docker_tag" \
+                    Rscript "$bindm_rscript"
+
+            fi
+        
+        
+        else 
+            results=`for value in ${result_methods[@]}; do echo "${outprefix}/${value}/results.rds"; done | awk '{print "\"" $0 "\","}' | tr '\n' ' '`
+            results=${results::-2}
+
+            rcode="
+                library(dplyr)
+                library($mdapackage)
+                library(readr)
+
+                rf <- c($results)
+                rs <- lapply(rf, readRDS)
+
+                comb <- mda.merge_results(rs)
+
+                saveRDS(comb,        file='${out_file}.rds')
+                write_tsv(comb\$res,      '${out_file}.tsv')
+                write_tsv(comb\$res.full, '${out_file}.full.tsv')
+            "
+            Rscript <(echo "$rcode")
+        fi
+
+
+        echo "[MDA] (`date`) MERGED OUTPUT '$out_file'"
+    else
+        echo "[MDA] (`date`) NO OUTPUT"
+    fi
+
+fi
+
+###############################################################################
