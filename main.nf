@@ -29,6 +29,8 @@ include { LIMMA } from './modules/limma'
 include { CORNCOB } from './modules/corncob'
 include { ZICOSEQ } from './modules/zicoseq'
 include { ANCOMBC2 } from './modules/ancombc2'
+include { ALPHA } from './modules/alpha'
+include { BETA } from './modules/beta'
 
 process VALIDATE_INPUT {
 
@@ -228,6 +230,32 @@ workflow {
     )
     ch_results_full = ch_results_full.mix(
         ZICOSEQ.out.res_full.first()
+    )
+
+  }
+
+
+  if (!params.skip_alpha) {
+
+    ALPHA(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        ALPHA.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        ALPHA.out.res_full.first()
+    )
+
+  }
+
+
+  if (!params.skip_beta) {
+
+    BETA(counts, metadata_clean, formulas)
+    ch_results = ch_results.mix(
+        BETA.out.res.first()
+    )
+    ch_results_full = ch_results_full.mix(
+        BETA.out.res_full.first()
     )
 
   }
